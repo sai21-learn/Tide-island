@@ -53,7 +53,10 @@ Item {
     }
 
     anchors.fill: parent
-    anchors.margins: 20
+    anchors.leftMargin: 20
+    anchors.rightMargin: 20
+    anchors.topMargin: 12
+    anchors.bottomMargin: 12
     opacity: showCondition ? 1 : 0
 
     Behavior on opacity {

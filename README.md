@@ -165,15 +165,11 @@ The default configuration is located at `/usr/share/tide-island/UserConfig.qml`.
 - [@BEST8OY](https://github.com/BEST8OY) - For providing the lyrics support.
 - [@gozhuimeng](https://github.com/gozhuimeng) - For improve the lyrics backend.
 
-## Important things
+- **The backend automatically detects your backlight device. If you encounter issues, please check /sys/class/backlight/**
 
-- **The backend is hardcoded to read /sys/class/backlight/intel_backlight/. If you are using AMD or a different backlight driver, please update the path (SysBackend.cpp:353).**
+- **The status of caps lock is monitored via /sys/class/leds/ for high performance. If your system doesn't expose LEDs there, it will fall back to polling every 2 seconds.**
 
-- **The status of caps lock is currently polled via hyprctl devices. Ensure hyprctl is in your $PATH.**
-
-- **If you encounter any issues, feel free to open an issue!**
-
--  **Please write your password in UserConfig.qml line 16, to make sure tlp switcher works normally**
+- **TLP mode switching now prompts for your sudo password at runtime for better security. You can still pre-configure it in UserConfig.qml if you prefer, but it is no longer required.**
 
 ## Join the community
 - Discord: https://discord.gg/gEmqgz76

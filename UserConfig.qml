@@ -45,6 +45,7 @@ QtObject {
     property string dynamicIslandPrimaryAction: "toggleExpandedPlayer"
     property int dynamicIslandSecondaryButton: 3
     property string dynamicIslandSecondaryAction: "toggleControlCenter"
+    property int dynamicIslandMouseRotation: 0
     // Supported built-in left swipe items:
     // "time", "date", "battery", "volume", "brightness", "workspace", "cpu", "ram", "cava"
     property var dynamicIslandLeftSwipeItems: (["cava","battery"])

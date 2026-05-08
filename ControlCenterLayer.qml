@@ -68,6 +68,8 @@ Item {
     property string batteryModeError: ""
     property string batteryModeLastCommandOutput: ""
     property int batteryModeRefreshPollsRemaining: 0
+    property bool batteryPasswordPromptVisible: false
+    property string batteryPendingPasswordValue: ""
 
     property string wifiLocalInfoMessage: ""
     property string wifiLocalError: ""
@@ -246,6 +248,8 @@ Item {
         batteryModeError = message;
         batteryModeInfoMessage = "";
         batteryModeDragOffset = 0;
+        batteryPasswordPromptVisible = false;
+        batteryPendingPasswordValue = "";
         setBatteryModeVisualIndex(batteryModeAppliedIndex, true);
     }
 
@@ -312,11 +316,27 @@ Item {
         }
 
         batteryModePendingIndex = nextIndex;
+        
+        const configuredPassword = trimString(userConfig.tlpSudoPassword);
+        if (configuredPassword.length === 0 && !batteryPasswordPromptVisible) {
+            batteryPasswordPromptVisible = true;
+            batteryPendingPasswordValue = "";
+            batteryModeInfoMessage = "Enter sudo password";
+            setBatteryModeVisualIndex(nextIndex, true);
+            return;
+        }
+
+        submitBatteryModeApply(configuredPassword.length > 0 ? configuredPassword : batteryPendingPasswordValue);
+    }
+
+    function submitBatteryModeApply(password) {
         batteryModeBusy = true;
         batteryModeError = "";
-        batteryModeInfoMessage = "Applying " + batteryModeLabel(nextIndex) + "...";
-        setBatteryModeVisualIndex(nextIndex, true);
-        let batteryCommand = "mode='" + batteryModeCommand(nextIndex) + "'; "
+        batteryModeInfoMessage = "Applying " + batteryModeLabel(batteryModePendingIndex) + "...";
+        batteryPasswordPromptVisible = false;
+        
+        const mode = batteryModeCommand(batteryModePendingIndex);
+        let batteryCommand = "mode='" + mode + "'; "
             + "if ! command -v tlp >/dev/null 2>&1; then exit 127; fi; "
             + "if [ \"$(id -u)\" -eq 0 ]; then exec tlp \"$mode\"; fi; "
             + "if command -v sudo >/dev/null 2>&1; then "
@@ -325,9 +345,8 @@ Item {
             + "  if [ \"$sudo_rc\" -eq 0 ]; then exit 0; fi; "
             + "fi; ";
 
-        const configuredPassword = trimString(userConfig.tlpSudoPassword);
-        if (configuredPassword.length > 0) {
-            batteryCommand += "printf '%s\\n' " + shellSingleQuote(configuredPassword)
+        if (password.length > 0) {
+            batteryCommand += "printf '%s\\n' " + shellSingleQuote(password)
                 + " | sudo -S -p '' tlp \"$mode\"; "
                 + "sudo_pw_rc=$?; "
                 + "if [ \"$sudo_pw_rc\" -eq 0 ]; then exit 0; fi; "
@@ -335,11 +354,14 @@ Item {
         } else {
             batteryCommand += "exit 126";
         }
+        
         batteryModeSetter.exec([
             "sh",
             "-lc",
             batteryCommand
         ]);
+        
+        batteryPendingPasswordValue = "";
     }
 
     function finishBatteryModeApply(exitCode) {
@@ -1468,6 +1490,49 @@ Item {
                     anchors.bottomMargin: 8
                     height: 34
                     clip: true
+                    visible: !controlCenter.batteryPasswordPromptVisible
+
+                Item {
+                    id: batteryPasswordPrompt
+                    anchors.fill: batteryModeCarousel
+                    visible: controlCenter.batteryPasswordPromptVisible
+                    
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 12
+                        color: "#212226"
+                        border.color: "#3f4046"
+                        border.width: 1
+
+                        TextInput {
+                            id: batteryPasswordField
+                            anchors.fill: parent
+                            anchors.leftMargin: 12
+                            anchors.rightMargin: 12
+                            color: controlCenter.textPrimary
+                            font.pixelSize: 11
+                            font.family: controlCenter.textFontFamily
+                            echoMode: TextInput.Password
+                            verticalAlignment: TextInput.AlignVCenter
+                            focus: batteryPasswordPrompt.visible
+                            
+                            onTextChanged: controlCenter.batteryPendingPasswordValue = text
+                            Keys.onReturnPressed: controlCenter.submitBatteryModeApply(text)
+                            Keys.onEscapePressed: controlCenter.rollbackBatteryMode("Cancelled.")
+                        }
+                        
+                        Text {
+                            anchors.fill: parent
+                            anchors.leftMargin: 12
+                            verticalAlignment: Text.AlignVCenter
+                            text: "Password..."
+                            color: controlCenter.textSecondary
+                            font.pixelSize: 11
+                            font.family: controlCenter.textFontFamily
+                            visible: batteryPasswordField.text.length === 0 && !batteryPasswordField.activeFocus
+                        }
+                    }
+                }
 
                     Item {
                         id: batteryModeItems

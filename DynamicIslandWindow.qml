@@ -45,11 +45,20 @@ PanelWindow {
     color: "transparent"
     anchors { top: true; left: true; right: true }
     mask: Region {
-        // Expand the clickable region horizontally to capture trackpad gestures better
+        // Only a thin strip at the top for capturing gestures across the whole width
         Region {
             x: 0
             y: 0
             width: root.width
+            height: 10
+        }
+
+        // Full height mask only around the capsule area
+        Region {
+            intersection: Intersection.Combine
+            x: Math.floor(mainCapsule.x - 20)
+            y: 0
+            width: Math.ceil(mainCapsule.width + 40)
             height: Math.ceil(mainCapsule.y + mainCapsule.height + 20)
         }
         
@@ -1886,9 +1895,18 @@ PanelWindow {
                     if (!pressed || !swipeArmed || suppressNextClick || twoFingerTouchArea.touchPoints.length >= 2) return;
 
                     const mappedPoint = capsuleMouseArea.mapToItem(islandContainer, mouse.x, mouse.y);
-                    const deltaX = mappedPoint.x - swipeLastX;
-                    const deltaY = Math.abs(mappedPoint.y - swipeStartY);
-                    const adjustedDeltaX = deltaY < sideSwipeVerticalTolerance ? deltaX : 0;
+                    let deltaX = mappedPoint.x - swipeLastX;
+                    let deltaY = mappedPoint.y - swipeStartY;
+
+                    if (userConfig.dynamicIslandMouseRotation === 90) {
+                        const tmp = deltaX; deltaX = deltaY; deltaY = -tmp;
+                    } else if (userConfig.dynamicIslandMouseRotation === 180) {
+                        deltaX = -deltaX; deltaY = -deltaY;
+                    } else if (userConfig.dynamicIslandMouseRotation === 270) {
+                        const tmp = deltaX; deltaX = -deltaY; deltaY = tmp;
+                    }
+
+                    const adjustedDeltaX = Math.abs(deltaY) < sideSwipeVerticalTolerance ? deltaX : 0;
                     const nextProgress = islandContainer.advanceSideSwipeProgress(
                         islandContainer.swipeTransitionProgress,
                         adjustedDeltaX
@@ -2010,11 +2028,17 @@ PanelWindow {
                         (touchPoints[0].x + touchPoints[1].x) / 2,
                         (touchPoints[0].y + touchPoints[1].y) / 2);
                     
-                    const deltaX = centerPoint.x - swipeStartX;
-                    // User requested: Swipe Left (deltaX < 0) -> Lyrics (pos progress)
-                    //                 Swipe Right (deltaX > 0) -> Custom (neg progress)
-                    // The advanceSideSwipeProgress function expects Pos deltaX for Pos progress.
-                    // So we invert deltaX to match the user's requested directions.
+                    let deltaX = centerPoint.x - swipeStartX;
+                    let deltaY = 0; // Vertical delta not used for progress currently but for rotation
+
+                    if (userConfig.dynamicIslandMouseRotation === 90) {
+                        const tmp = deltaX; deltaX = deltaY; deltaY = -tmp;
+                    } else if (userConfig.dynamicIslandMouseRotation === 180) {
+                        deltaX = -deltaX; deltaY = -deltaY;
+                    } else if (userConfig.dynamicIslandMouseRotation === 270) {
+                        const tmp = deltaX; deltaX = -deltaY; deltaY = tmp;
+                    }
+
                     const logicalDeltaX = -deltaX;
                     
                     const nextProgress = islandContainer.advanceSideSwipeProgress(
@@ -2473,6 +2497,28 @@ PanelWindow {
         property bool isSwiping: false
         
         onWheel: (wheel) => {
+            if (root.anyConnectivityDetailMounted) {
+                wheel.accepted = false;
+                return;
+            }
+
+            let dx = wheel.pixelDelta.x !== 0 ? wheel.pixelDelta.x : wheel.angleDelta.x / 4;
+            let dy = wheel.pixelDelta.y !== 0 ? wheel.pixelDelta.y : wheel.angleDelta.y / 4;
+            
+            if (userConfig.dynamicIslandMouseRotation === 90) {
+                const tmp = dx; dx = dy; dy = -tmp;
+            } else if (userConfig.dynamicIslandMouseRotation === 180) {
+                dx = -dx; dy = -dy;
+            } else if (userConfig.dynamicIslandMouseRotation === 270) {
+                const tmp = dx; dx = -dy; dy = tmp;
+            }
+
+            // Only trigger swipe if horizontal movement is dominant
+            if (Math.abs(dx) <= Math.abs(dy)) {
+                wheel.accepted = false;
+                return;
+            }
+
             if (!isSwiping) {
                 isSwiping = true;
                 swipeStartProgress = islandContainer.swipeTransitionProgress;
@@ -2480,19 +2526,15 @@ PanelWindow {
                 islandContainer.cancelSideSwipeSettle();
             }
 
-            const dx = wheel.pixelDelta.x !== 0 ? wheel.pixelDelta.x : wheel.angleDelta.x / 4;
-            const dy = wheel.pixelDelta.y !== 0 ? wheel.pixelDelta.y : wheel.angleDelta.y / 4;
-            const effectiveDx = Math.abs(dx) > Math.abs(dy) ? dx : dy;
-            
             // Reduced sensitivity for smoother control
-            accumulatedDelta += (effectiveDx * 0.8);
+            accumulatedDelta += (dx * 0.8);
             
             const nextProgress = islandContainer.advanceSideSwipeProgress(swipeStartProgress, -accumulatedDelta);
             islandContainer.swipeTransitionProgress = nextProgress;
             mainCapsule.displayedWidth = mainCapsule.sideSwipePreviewWidth;
             
             swipeSettleTimer.restart();
-            wheel.accepted = false; 
+            wheel.accepted = true; 
         }
 
         Timer {

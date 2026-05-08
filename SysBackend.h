@@ -113,6 +113,8 @@ private:
     bool m_isBluetoothAudioConnected;
     bool m_capsLockInitialized;
     bool m_capsLockOn;
+    QStringList m_capsLockFiles;
+    QFileSystemWatcher *m_capsWatcher;
     struct udev *m_udev;
     struct udev_monitor *m_batteryMonitor;
 };

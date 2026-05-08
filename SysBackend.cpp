@@ -36,6 +36,7 @@ SysBackend::SysBackend(QObject *parent)
       m_isBluetoothAudioConnected(false),
       m_capsLockInitialized(false),
       m_capsLockOn(false),
+      m_capsWatcher(nullptr),
       m_udev(nullptr),
       m_batteryMonitor(nullptr) {
     setupHyprland();
@@ -457,35 +458,42 @@ void SysBackend::updateBrightness() {
 
 // 5. caps lock
 void SysBackend::setupKeyboard() {
+    if (!m_capsWatcher) m_capsWatcher = new QFileSystemWatcher(this);
+    
+    QDir ledsDir("/sys/class/leds");
+    QStringList capsLeds = ledsDir.entryList(QStringList() << "*::capslock", QDir::Dirs);
+    m_capsLockFiles.clear();
+    for (const QString &led : capsLeds) {
+        QString path = "/sys/class/leds/" + led + "/brightness";
+        if (QFileInfo::exists(path)) {
+            m_capsLockFiles << path;
+            m_capsWatcher->addPath(path);
+        }
+    }
+    
+    connect(m_capsWatcher, &QFileSystemWatcher::fileChanged, this, &SysBackend::updateCapsLock);
+
     updateCapsLock();
+    
     if (!m_capsPollTimer) {
         m_capsPollTimer = new QTimer(this);
-        m_capsPollTimer->setInterval(200);
+        m_capsPollTimer->setInterval(2000); // Slower fallback polling
         connect(m_capsPollTimer, &QTimer::timeout, this, &SysBackend::updateCapsLock);
         m_capsPollTimer->start();
     }
 }
 
 void SysBackend::updateCapsLock() {
-    QProcess hyprctl;
-    hyprctl.start("hyprctl", QStringList() << "devices" << "-j");
-    if (!hyprctl.waitForFinished(500)) {
-        hyprctl.kill();
-        hyprctl.waitForFinished(100);
-        return;
-    }
-
-    const QByteArray output = hyprctl.readAllStandardOutput();
-    QJsonParseError parseError;
-    const QJsonDocument doc = QJsonDocument::fromJson(output, &parseError);
-    if (parseError.error != QJsonParseError::NoError || !doc.isObject()) return;
-
-    const QJsonArray keyboards = doc.object().value("keyboards").toArray();
     bool currentState = false;
-    for (const QJsonValue &keyboardVal : keyboards) {
-        if (keyboardVal.toObject().value("capsLock").toBool()) {
-            currentState = true;
-            break;
+    for (const QString &path : m_capsLockFiles) {
+        QFile file(path);
+        if (file.open(QIODevice::ReadOnly)) {
+            if (file.readAll().trimmed() == "1") {
+                currentState = true;
+                file.close();
+                break;
+            }
+            file.close();
         }
     }
 
