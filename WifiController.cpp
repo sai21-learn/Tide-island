@@ -100,7 +100,7 @@ void WifiController::detectBackend() {
 
 void WifiController::setBackend(IWifiBackend *backend) {
     if (m_backend) {
-        m_backend->disconnect(this);
+        QObject::disconnect(m_backend, nullptr, this, nullptr);
         m_backend->deleteLater();
     }
     m_backend = backend;
