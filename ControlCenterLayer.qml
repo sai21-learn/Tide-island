@@ -318,15 +318,22 @@ Item {
         batteryModePendingIndex = nextIndex;
         
         const configuredPassword = trimString(userConfig.tlpSudoPassword);
-        if (configuredPassword.length === 0 && !batteryPasswordPromptVisible) {
-            batteryPasswordPromptVisible = true;
-            batteryPendingPasswordValue = "";
-            batteryModeInfoMessage = "Enter sudo password";
+        if (configuredPassword.length === 0) {
+            authDialogComponent.createObject(controlCenter, {
+                promptText: "Sudo Password Required",
+                infoText: "Changing TLP battery mode to " + batteryModeLabel(nextIndex) + " requires authentication.",
+                onAccepted: function(password) {
+                    submitBatteryModeApply(password);
+                },
+                onRejected: function() {
+                    rollbackBatteryMode("Authentication cancelled.");
+                }
+            });
             setBatteryModeVisualIndex(nextIndex, true);
             return;
         }
 
-        submitBatteryModeApply(configuredPassword.length > 0 ? configuredPassword : batteryPendingPasswordValue);
+        submitBatteryModeApply(configuredPassword);
     }
 
     function submitBatteryModeApply(password) {
@@ -1490,49 +1497,7 @@ Item {
                     anchors.bottomMargin: 8
                     height: 34
                     clip: true
-                    visible: !controlCenter.batteryPasswordPromptVisible
-
-                Item {
-                    id: batteryPasswordPrompt
-                    anchors.fill: batteryModeCarousel
-                    visible: controlCenter.batteryPasswordPromptVisible
-                    
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: 12
-                        color: "#212226"
-                        border.color: "#3f4046"
-                        border.width: 1
-
-                        TextInput {
-                            id: batteryPasswordField
-                            anchors.fill: parent
-                            anchors.leftMargin: 12
-                            anchors.rightMargin: 12
-                            color: controlCenter.textPrimary
-                            font.pixelSize: 11
-                            font.family: controlCenter.textFontFamily
-                            echoMode: TextInput.Password
-                            verticalAlignment: TextInput.AlignVCenter
-                            focus: batteryPasswordPrompt.visible
-                            
-                            onTextChanged: controlCenter.batteryPendingPasswordValue = text
-                            Keys.onReturnPressed: controlCenter.submitBatteryModeApply(text)
-                            Keys.onEscapePressed: controlCenter.rollbackBatteryMode("Cancelled.")
-                        }
-                        
-                        Text {
-                            anchors.fill: parent
-                            anchors.leftMargin: 12
-                            verticalAlignment: Text.AlignVCenter
-                            text: "Password..."
-                            color: controlCenter.textSecondary
-                            font.pixelSize: 11
-                            font.family: controlCenter.textFontFamily
-                            visible: batteryPasswordField.text.length === 0 && !batteryPasswordField.activeFocus
-                        }
-                    }
-                }
+                    visible: true
 
                     Item {
                         id: batteryModeItems
@@ -1840,4 +1805,9 @@ Item {
         }
     }
 
+
+    Component {
+        id: authDialogComponent
+        AuthDialog {}
+    }
 }

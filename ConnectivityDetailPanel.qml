@@ -70,11 +70,40 @@ Item {
         ignoreUnknownSignals: true
 
         function onWifiPendingPasswordSsidChanged() {
-            promptFocusTimer.restart();
+            if (root.provider && root.provider.wifiPendingPasswordSsid.length > 0) {
+                authDialogComponent.createObject(root, {
+                    promptText: "Wi-Fi Password",
+                    infoText: "Enter the password for " + root.provider.wifiPendingPasswordSsid,
+                    onAccepted: function(password) {
+                        root.provider.wifiPendingPasswordValue = password;
+                        root.provider.submitWifiPassword();
+                    },
+                    onRejected: function() {
+                        root.provider.clearWifiPrompt();
+                    }
+                });
+            }
         }
 
         function onBluetoothPairingActiveChanged() {
-            promptFocusTimer.restart();
+            if (root.provider && root.provider.bluetoothPairingActive) {
+                authDialogComponent.createObject(root, {
+                    promptText: root.provider.bluetoothPairingTitle,
+                    infoText: root.provider.bluetoothPairingMessage,
+                    onAccepted: function(secret) {
+                        if (root.provider.bluetoothPairingRequiresInput)
+                            root.provider.submitBluetoothSecret(secret);
+                        else if (root.provider.bluetoothPairingRequiresConfirmation)
+                            root.provider.submitBluetoothConfirmation(true);
+                    },
+                    onRejected: function() {
+                        if (root.provider.bluetoothPairingRequiresConfirmation)
+                            root.provider.submitBluetoothConfirmation(false);
+                        else
+                            root.provider.clearBluetoothPairing();
+                    }
+                });
+            }
         }
     }
 
@@ -249,324 +278,6 @@ Item {
                 font.pixelSize: 11
                 font.family: root.textFontFamily
                 wrapMode: Text.Wrap
-            }
-
-            Rectangle {
-                id: bluetoothPairingPrompt
-                width: parent.width
-                height: visible
-                    ? ((root.provider && root.provider.bluetoothPairingRequiresInput)
-                        ? 122
-                        : ((root.provider && root.provider.bluetoothPairingRequiresConfirmation) ? 110 : 82))
-                    : 0
-                radius: 16
-                color: "#323236"
-                visible: root.isBluetooth && root.provider && root.provider.bluetoothPairingActive
-                clip: true
-
-                onVisibleChanged: {
-                    if (visible)
-                        promptFocusTimer.restart();
-                }
-
-                Item {
-                    anchors.fill: parent
-                    anchors.margins: 12
-
-                    Column {
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        spacing: 10
-
-                        Text {
-                            width: parent.width
-                            text: root.provider ? root.provider.bluetoothPairingTitle : ""
-                            color: "#f5f5f7"
-                            font.pixelSize: 12
-                            font.family: root.textFontFamily
-                            font.weight: Font.DemiBold
-                            elide: Text.ElideRight
-                        }
-
-                        Text {
-                            width: parent.width
-                            text: root.provider ? root.provider.bluetoothPairingMessage : ""
-                            color: "#d2d4da"
-                            font.pixelSize: 11
-                            font.family: root.textFontFamily
-                            wrapMode: Text.Wrap
-                        }
-                    }
-
-                    Row {
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.bottom: parent.bottom
-                        spacing: 8
-                        visible: root.provider
-                            && (root.provider.bluetoothPairingRequiresInput
-                                || root.provider.bluetoothPairingRequiresConfirmation)
-
-                        Rectangle {
-                            id: bluetoothSecretFieldFrame
-                            width: visible
-                                ? Math.max(0, parent.width - bluetoothPrimaryButton.width - bluetoothCancelButton.width - 16)
-                                : 0
-                            height: 34
-                            radius: 12
-                            color: "#212226"
-                            border.color: "#3f4046"
-                            border.width: 1
-                            visible: root.provider && root.provider.bluetoothPairingRequiresInput
-
-                            Text {
-                                anchors.left: parent.left
-                                anchors.leftMargin: 12
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: root.provider && root.provider.bluetoothPairingNumericInput
-                                    ? "Passkey"
-                                    : "PIN"
-                                color: "#7f828a"
-                                font.pixelSize: 11
-                                font.family: root.textFontFamily
-                                visible: bluetoothSecretField.text.length === 0 && !bluetoothSecretField.activeFocus
-                            }
-
-                            TextInput {
-                                id: bluetoothSecretField
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                anchors.leftMargin: 12
-                                anchors.rightMargin: 12
-                                height: Math.min(parent.height - 8, implicitHeight + 2)
-                                color: "#f5f5f7"
-                                font.pixelSize: 11
-                                font.family: root.textFontFamily
-                                verticalAlignment: TextInput.AlignVCenter
-                                topPadding: 0
-                                bottomPadding: 0
-                                leftPadding: 0
-                                rightPadding: 0
-                                clip: true
-                                selectByMouse: true
-                                cursorVisible: activeFocus
-                                inputMethodHints: root.provider && root.provider.bluetoothPairingNumericInput
-                                    ? Qt.ImhDigitsOnly
-                                    : Qt.ImhNoPredictiveText
-                                maximumLength: root.provider && root.provider.bluetoothPairingNumericInput ? 6 : 16
-                                text: root.provider ? root.provider.bluetoothPendingSecretValue : ""
-                                onTextChanged: {
-                                    if (root.provider)
-                                        root.provider.bluetoothPendingSecretValue = text;
-                                }
-                                Keys.onReturnPressed: {
-                                    if (root.provider)
-                                        root.provider.submitBluetoothPairingSecret();
-                                }
-                            }
-                        }
-
-                        Rectangle {
-                            id: bluetoothPrimaryButton
-                            width: root.provider && root.provider.bluetoothPairingRequiresInput ? 50 : 76
-                            height: 34
-                            radius: 12
-                            color: "#0a84ff"
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: root.provider && root.provider.bluetoothPairingRequiresConfirmation
-                                    ? "Confirm"
-                                    : "Pair"
-                                color: "#ffffff"
-                                font.pixelSize: 11
-                                font.family: root.textFontFamily
-                                font.weight: Font.DemiBold
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                onClicked: {
-                                    if (!root.provider)
-                                        return;
-
-                                    if (root.provider.bluetoothPairingRequiresConfirmation)
-                                        root.provider.confirmBluetoothPairing();
-                                    else
-                                        root.provider.submitBluetoothPairingSecret();
-                                }
-                            }
-                        }
-
-                        Rectangle {
-                            id: bluetoothCancelButton
-                            width: 58
-                            height: 34
-                            radius: 12
-                            color: "#4a4b50"
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: "Cancel"
-                                color: "#f5f5f7"
-                                font.pixelSize: 11
-                                font.family: root.textFontFamily
-                                font.weight: Font.DemiBold
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                onClicked: {
-                                    if (root.provider)
-                                        root.provider.cancelBluetoothPairing();
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Rectangle {
-                id: wifiPasswordPrompt
-                width: parent.width
-                height: visible ? 92 : 0
-                radius: 16
-                color: "#323236"
-                visible: root.isWifi && root.provider && root.provider.wifiPendingPasswordSsid.length > 0
-                clip: true
-
-                onVisibleChanged: {
-                    if (visible)
-                        promptFocusTimer.restart();
-                }
-
-                Item {
-                    anchors.fill: parent
-                    anchors.margins: 12
-
-                    Text {
-                        anchors.left: parent.left
-                        anchors.top: parent.top
-                        anchors.right: parent.right
-                        text: "Enter password for " + (root.provider ? root.provider.wifiPendingPasswordSsid : "")
-                        color: "#f5f5f7"
-                        font.pixelSize: 12
-                        font.family: root.textFontFamily
-                        font.weight: Font.DemiBold
-                        elide: Text.ElideRight
-                    }
-
-                    Rectangle {
-                        anchors.left: parent.left
-                        anchors.right: joinButton.left
-                        anchors.rightMargin: 8
-                        anchors.bottom: parent.bottom
-                        height: 34
-                        radius: 12
-                        color: "#212226"
-                        border.color: "#3f4046"
-                        border.width: 1
-
-                        Text {
-                            anchors.left: parent.left
-                            anchors.leftMargin: 12
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: "Password"
-                            color: "#7f828a"
-                            font.pixelSize: 11
-                            font.family: root.textFontFamily
-                            visible: root.provider && root.provider.wifiPendingPasswordValue.length === 0 && !wifiPasswordField.activeFocus
-                        }
-
-                        TextInput {
-                            id: wifiPasswordField
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            anchors.leftMargin: 12
-                            anchors.rightMargin: 12
-                            height: Math.min(parent.height - 8, implicitHeight + 2)
-                            color: "#f5f5f7"
-                            font.pixelSize: 11
-                            font.family: root.textFontFamily
-                            echoMode: TextInput.Password
-                            verticalAlignment: TextInput.AlignVCenter
-                            topPadding: 0
-                            bottomPadding: 0
-                            leftPadding: 0
-                            rightPadding: 0
-                            clip: true
-                            selectByMouse: true
-                            cursorVisible: activeFocus
-                            text: root.provider ? root.provider.wifiPendingPasswordValue : ""
-                            onTextChanged: {
-                                if (root.provider)
-                                    root.provider.wifiPendingPasswordValue = text;
-                            }
-                            Keys.onReturnPressed: {
-                                if (root.provider)
-                                    root.provider.submitWifiPassword();
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        id: joinButton
-                        anchors.right: cancelButton.left
-                        anchors.rightMargin: 8
-                        anchors.bottom: parent.bottom
-                        width: 50
-                        height: 34
-                        radius: 12
-                        color: "#0a84ff"
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: "Join"
-                            color: "#ffffff"
-                            font.pixelSize: 11
-                            font.family: root.textFontFamily
-                            font.weight: Font.DemiBold
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: {
-                                if (root.provider)
-                                    root.provider.submitWifiPassword();
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        id: cancelButton
-                        anchors.right: parent.right
-                        anchors.bottom: parent.bottom
-                        width: 50
-                        height: 34
-                        radius: 12
-                        color: "#4a4b50"
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: "Cancel"
-                            color: "#f5f5f7"
-                            font.pixelSize: 11
-                            font.family: root.textFontFamily
-                            font.weight: Font.DemiBold
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: {
-                                if (root.provider)
-                                    root.provider.clearWifiPrompt();
-                            }
-                        }
-                    }
-                }
             }
         }
 
@@ -802,5 +513,9 @@ Item {
             }
         }
 
+
+    Component {
+        id: authDialogComponent
+        AuthDialog {}
     }
 }
