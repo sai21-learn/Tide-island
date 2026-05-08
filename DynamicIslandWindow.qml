@@ -2004,7 +2004,7 @@ PanelWindow {
                 id: twoFingerTouchArea
                 anchors.fill: parent
                 z: 0
-                enabled: !root.overviewVisible
+                enabled: !root.overviewVisible && islandContainer.islandState !== "control_center" && !connectivityPromptActive
                 mouseEnabled: false
                 minimumTouchPoints: 2
                 maximumTouchPoints: 2

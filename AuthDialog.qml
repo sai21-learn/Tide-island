@@ -2,9 +2,10 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
 import Quickshell
+import Quickshell.Wayland
 import Quickshell.Hyprland
 
-ShellWindow {
+PanelWindow {
     id: authWindow
     
     property string promptText: "Authentication Required"
