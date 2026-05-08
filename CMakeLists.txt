@@ -24,6 +24,12 @@ qt_add_qml_module(IslandBackend
         WifiController.cpp
         WifiNetworkModel.h
         WifiNetworkModel.cpp
+        IwdBackend.h
+        IwdBackend.cpp
+        NetworkManagerBackend.h
+        NetworkManagerBackend.cpp
+        Logger.h
+        Logger.cpp
 )
 
 target_link_libraries(IslandBackend PRIVATE
