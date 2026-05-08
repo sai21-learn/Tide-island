@@ -106,6 +106,14 @@ Video: https://www.youtube.com/watch?v=vCA8sWLJjiw&list=LL&index=2
 
 - Any nerd font (for icon) && any font (for text) 
 
+## Technical Overview
+
+### Pluggable Backend Architecture
+Tide Island uses a modular backend system for its core components. The Wi-Fi controller, for instance, dynamically selects between `NetworkManager` and `iwd` depending on what is available on your system. This allows for cleaner code and easier troubleshooting.
+
+### Real-time Diagnostics
+A centralized logging system is integrated into the core, accessible from both C++ and QML. This provides real-time feedback on connectivity and system events, greatly simplifying hardware-specific debugging.
+
 ## Installation
 
 ### Arch Linux (Recommended)

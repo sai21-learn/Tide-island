@@ -1,6 +1,7 @@
 #pragma once
 
 #include "WifiNetworkModel.h"
+#include "IWifiBackend.h"
 
 #include <QDBusArgument>
 #include <QDBusMessage>
@@ -136,32 +137,10 @@ private:
 
     WifiNetworkModel m_networks;
     QHash<QString, QString> m_savedConnectionsBySsid;
-    QString m_backendName = QStringLiteral("unsupported");
-    QString m_wifiDevicePath;
+    void setBackend(IWifiBackend *backend);
+
+    IWifiBackend *m_backend = nullptr;
     QString m_infoMessage;
     QString m_errorMessage;
-    QString m_currentSsid;
-    QString m_statusText = QStringLiteral("Unavailable");
-    QString m_unsupportedReason;
-    bool m_supported = false;
-    bool m_readOnly = true;
-    bool m_available = false;
-    bool m_enabled = false;
-    bool m_busy = false;
-    bool m_scanning = false;
-    bool m_actionInProgress = false;
-    bool m_savedConnectionsDirty = true;
-    bool m_managerSignalsConnected = false;
-    bool m_iwdSignalsConnected = false;
-    bool m_settingsSignalsConnected = false;
-    QString m_connectedDeviceSignalPath;
-    QString m_connectedDeviceSignalBackend;
-    IwdAgent *m_iwdAgent = nullptr;
-    bool m_iwdAgentRegistered = false;
-    bool m_iwdAgentObjectExported = false;
-    QString m_iwdAgentRegistrationError;
-    QHash<QString, QString> m_iwdPendingPassphrases;
     QTimer m_stateRefreshTimer;
-    QTimer m_networkRefreshTimer;
-    QTimer m_scanTimeoutTimer;
 };
