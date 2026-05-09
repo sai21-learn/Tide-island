@@ -13,8 +13,7 @@ PanelWindow {
     property bool overviewPreloading: false
     readonly property bool overviewPreparing: overviewPhase === "preparing"
     readonly property bool overviewVisible: overviewPhase === "preparing" || overviewPhase === "opening" || overviewPhase === "open"
-    readonly property bool overviewMounted: overviewPhase !== "closed" || overviewPreloading
-    readonly property bool overviewLoaderActive: overviewMounted || overviewUnloadGraceTimer.running
+    readonly property bool overviewLoaderActive: overviewPhase !== "closed" || overviewPreloading
     readonly property bool overviewDataReady: overviewLoader.item
         ? !!overviewLoader.item.overviewDataReady
         : false
@@ -61,8 +60,20 @@ PanelWindow {
             width: Math.ceil(mainCapsule.width + 40)
             height: Math.ceil(mainCapsule.y + mainCapsule.height + 20)
         }
-        
-        // Add existing detail shells
+
+        // Keep pointer delivery stable while a side swipe is active, even over empty workspace space.
+        Region {
+            intersection: Intersection.Combine
+            x: 0
+            y: capsuleMouseArea.sideSwipeInteractive
+                ? Math.max(0, Math.floor(mainCapsule.y - capsuleMouseArea.sideSwipeVerticalTolerance))
+                : 0
+            width: capsuleMouseArea.sideSwipeInteractive ? root.width : 0
+            height: capsuleMouseArea.sideSwipeInteractive
+                ? Math.ceil(mainCapsule.height + capsuleMouseArea.sideSwipeVerticalTolerance * 2)
+                : 0
+        }
+
         Region {
             intersection: Intersection.Combine
             x: Math.floor(wifiConnectivityDetailShell.x)
@@ -80,12 +91,8 @@ PanelWindow {
         }
     }
     implicitHeight: root.overviewVisible
-        ? Math.max(
-            Math.ceil(4 + root.connectivityDetailHeight + 12),
-            Math.ceil(4 + root.overviewCapsuleHeight + 8),
-            Math.ceil(root.controlCenterWindowHeight)
-        )
-        : Math.max(Math.ceil(4 + root.connectivityDetailHeight + 12), Math.ceil(root.controlCenterWindowHeight))
+        ? Math.max(Math.ceil(4 + root.connectivityDetailHeight + 12), Math.ceil(4 + root.overviewCapsuleHeight + 8))
+        : Math.ceil(4 + root.connectivityDetailHeight + 12)
     exclusiveZone: 45
     aboveWindows: true
     focusable: root.monitorFocused && (root.overviewVisible || root.connectivityPromptActive)
@@ -132,16 +139,9 @@ PanelWindow {
     property bool bluetoothConnectivityDetailOpen: false
     property bool bluetoothConnectivityDetailMounted: false
     property bool overviewWallpaperRefreshPending: false
-    property bool overviewWallpaperCacheBusy: false
     readonly property bool anyConnectivityDetailMounted: wifiConnectivityDetailMounted || bluetoothConnectivityDetailMounted
     readonly property real connectivityDetailWidth: 318
     readonly property real connectivityDetailHeight: 404
-    readonly property real controlCenterMaximumExtraHeight: controlCenterLoader.item
-        ? controlCenterLoader.item.controlCenterMaximumExtraHeight
-        : 120
-    readonly property real controlCenterWindowHeight: islandContainer.controlCenterLayerVisible
-        ? 4 + 320 + root.controlCenterMaximumExtraHeight + 12
-        : 0
     readonly property real connectivityDetailGap: 16
     readonly property int connectivityDetailAnimationDuration: 360
     readonly property string overviewWallpaperSource: overviewWallpaperCacheLoader.item
@@ -158,7 +158,6 @@ PanelWindow {
 
     function prepareOverview() {
         if (overviewPhase !== "closed") return;
-        overviewUnloadGraceTimer.stop();
         overviewPreloading = true;
         overviewPreloadExpireTimer.restart();
     }
@@ -171,7 +170,6 @@ PanelWindow {
 
     function openOverview() {
         if (overviewPhase !== "closed") return;
-        overviewUnloadGraceTimer.stop();
         overviewPreloadExpireTimer.stop();
         overviewPreloading = true;
         overviewPhase = "preparing";
@@ -181,9 +179,7 @@ PanelWindow {
     }
 
     function closeOverview() {
-        if (!overviewMounted) return;
-        if (overviewLoader.status === Loader.Ready)
-            overviewUnloadGraceTimer.restart();
+        if (!overviewLoaderActive) return;
         overviewRevealTimer.stop();
         overviewPreloadExpireTimer.stop();
         islandContainer.restoreRestingCapsule(true);
@@ -269,7 +265,7 @@ PanelWindow {
             return;
         }
 
-        if (overviewMounted)
+        if (overviewLoaderActive)
             closeOverviewEverywhere();
         else
             openOverviewEverywhere();
@@ -299,10 +295,6 @@ PanelWindow {
             overviewWallpaperCacheLoader.item.refreshNow();
             overviewWallpaperRefreshPending = false;
         }
-    }
-
-    function showNotification(appName, summary, body) {
-        islandContainer.showNotificationCapsule(appName, summary, body);
     }
 
     function handleWorkspaceEvent(event) {
@@ -393,12 +385,6 @@ PanelWindow {
     }
 
     Timer {
-        id: overviewUnloadGraceTimer
-        interval: 260
-        repeat: false
-    }
-
-    Timer {
         id: wifiConnectivityDetailCleanupTimer
         interval: root.connectivityDetailAnimationDuration
         repeat: false
@@ -422,7 +408,7 @@ PanelWindow {
         id: overviewWallpaperCacheLoader
         active: root.overviewLoaderActive
             || overviewWallpaperCacheKeepAliveTimer.running
-            || root.overviewWallpaperCacheBusy
+            || (item && item.busy)
         asynchronous: false
         visible: false
 
@@ -438,10 +424,6 @@ PanelWindow {
                 sourcePath: userConfig.wallpaperPath
                 targetWidth: root.overviewWallpaperTargetWidth
                 targetHeight: root.overviewWallpaperTargetHeight
-
-                onBusyChanged: root.overviewWallpaperCacheBusy = busy
-                Component.onCompleted: root.overviewWallpaperCacheBusy = busy
-                Component.onDestruction: root.overviewWallpaperCacheBusy = false
             }
         }
     }
@@ -538,8 +520,7 @@ PanelWindow {
         readonly property bool usesSystemStatsModule: configuredLeftSwipeIds.indexOf("cpu") !== -1
             || configuredLeftSwipeIds.indexOf("ram") !== -1
         readonly property bool usesCavaModule: configuredLeftSwipeIds.indexOf("cava") !== -1
-        property var customLeftItems: []
-        property string _customLeftItemsSignature: ""
+        readonly property var customLeftItems: buildCustomSwipeItems(userConfig.dynamicIslandLeftSwipeItems)
         readonly property bool hasCustomLeftItems: customLeftItems.length > 0
         readonly property bool customSwipeVisible: !root.overviewVisible
             && hasCustomLeftItems
@@ -569,7 +550,6 @@ PanelWindow {
         readonly property bool notificationLayerVisible: !root.overviewVisible && islandState === "notification"
         readonly property bool controlCenterLayerVisible: !root.overviewVisible && islandState === "control_center"
         readonly property string lyricsDisplayText: lyricsBridge.displayText
-        readonly property bool screenRecordingActive: root.screenRecordingActive
         readonly property var overviewView: overviewLoader.item && overviewLoader.item.overviewView
             ? overviewLoader.item.overviewView
             : null
@@ -598,30 +578,6 @@ PanelWindow {
                 syncCustomCapsuleWidth();
             }
         }
-        onConfiguredLeftSwipeIdsChanged: {
-            syncCustomLeftItems();
-            refreshMissingLeftSwipeValues();
-        }
-        onBatteryCapacityChanged: syncCustomLeftItems()
-        onIsChargingChanged: syncCustomLeftItems()
-        onCurrentVolumeChanged: syncCustomLeftItems()
-        onIsMutedChanged: syncCustomLeftItems()
-        onCurrentBrightnessChanged: syncCustomLeftItems()
-        onCurrentCpuUsageChanged: syncCustomLeftItems()
-        onCurrentRamUsageChanged: syncCustomLeftItems()
-        onCurrentWsChanged: syncCustomLeftItems()
-
-        Connections {
-            target: timeObj
-
-            function onCurrentTimeChanged() {
-                islandContainer.syncCustomLeftItems();
-            }
-
-            function onCurrentDateLabelChanged() {
-                islandContainer.syncCustomLeftItems();
-            }
-        }
 
         Behavior on osdProgress {
             enabled: islandContainer.osdProgressAnimationEnabled
@@ -641,10 +597,10 @@ PanelWindow {
             if (userConfig.overviewCloseKey && event.key === userConfig.overviewCloseKey) {
                 root.closeOverviewEverywhere();
                 event.accepted = true;
-            } else if ((userConfig.overviewPreviousWorkspaceKey && event.key === userConfig.overviewPreviousWorkspaceKey) || (event.key === Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier)) || event.key === Qt.Key_Backtab) {
+            } else if (userConfig.overviewPreviousWorkspaceKey && event.key === userConfig.overviewPreviousWorkspaceKey) {
                 Hyprland.dispatch("workspace r-1");
                 event.accepted = true;
-            } else if ((userConfig.overviewNextWorkspaceKey && event.key === userConfig.overviewNextWorkspaceKey) || event.key === Qt.Key_Tab) {
+            } else if (userConfig.overviewNextWorkspaceKey && event.key === userConfig.overviewNextWorkspaceKey) {
                 Hyprland.dispatch("workspace r+1");
                 event.accepted = true;
             }
@@ -708,6 +664,7 @@ PanelWindow {
                 smartRestoreState();
                 return;
             default:
+                console.warn("Unknown Dynamic Island click action:", actionName);
             }
         }
 
@@ -796,27 +753,19 @@ PanelWindow {
         }
 
         function applyCavaOutput(line) {
-            const values = String(line === undefined || line === null ? "" : line).split(";");
-            if (values.length < 8) return;
+            const values = String(line === undefined || line === null ? "" : line)
+                .split(";")
+                .filter(value => value !== "");
 
-            const nextLevels = [
-                clamp01((Number(values[0]) || 0) / 7.0),
-                clamp01((Number(values[1]) || 0) / 7.0),
-                clamp01((Number(values[2]) || 0) / 7.0),
-                clamp01((Number(values[3]) || 0) / 7.0),
-                clamp01((Number(values[4]) || 0) / 7.0),
-                clamp01((Number(values[5]) || 0) / 7.0),
-                clamp01((Number(values[6]) || 0) / 7.0),
-                clamp01((Number(values[7]) || 0) / 7.0)
-            ];
+            if (values.length === 0) return;
 
-            const previousLevels = Array.isArray(cavaLevels) ? cavaLevels : [];
-            let changed = previousLevels.length !== nextLevels.length;
-            for (let index = 0; !changed && index < nextLevels.length; index++)
-                changed = Math.abs((Number(previousLevels[index]) || 0) - nextLevels[index]) >= 0.03;
+            const nextLevels = [];
+            for (let index = 0; index < values.length; index++) {
+                const parsed = Number(values[index]);
+                nextLevels.push(clamp01((isNaN(parsed) ? 0 : parsed) / 7.0));
+            }
 
-            if (changed)
-                cavaLevels = nextLevels;
+            cavaLevels = nextLevels;
         }
 
         function buildCustomSwipeItem(itemId) {
@@ -831,7 +780,6 @@ PanelWindow {
                     id: itemId,
                     kind: "battery",
                     level: Math.max(0, Math.min(100, batteryCapacity)),
-                    isCharging: isCharging,
                     icon: "",
                     text: Math.max(0, batteryCapacity) + "%"
                 };
@@ -872,47 +820,21 @@ PanelWindow {
             }
         }
 
-        function buildCustomSwipeItems(itemIds) {
-            const source = Array.isArray(itemIds) ? itemIds : [];
+        function buildCustomSwipeItems(rawItems) {
+            const source = Array.isArray(rawItems) ? rawItems : [];
             const resolved = [];
+            const seen = {};
 
             for (let index = 0; index < source.length; index++) {
-                const itemId = String(source[index] || "");
-                if (itemId === "") continue;
+                const itemId = normalizeSwipeItemId(source[index]);
+                if (itemId === "" || seen[itemId]) continue;
+                seen[itemId] = true;
 
                 const nextItem = buildCustomSwipeItem(itemId);
                 if (nextItem) resolved.push(nextItem);
             }
 
             return resolved;
-        }
-
-        function customSwipeItemsSignature(items) {
-            const source = Array.isArray(items) ? items : [];
-            let signature = "";
-
-            for (let index = 0; index < source.length; index++) {
-                const item = source[index] || {};
-                signature += String(item.id || "")
-                    + "\u001f" + String(item.kind || "")
-                    + "\u001f" + String(item.icon || "")
-                    + "\u001f" + String(item.text || "")
-                    + "\u001f" + String(item.level === undefined ? "" : item.level)
-                    + "\u001f" + String(item.isCharging === undefined ? "" : item.isCharging)
-                    + "\u001e";
-            }
-
-            return signature;
-        }
-
-        function syncCustomLeftItems() {
-            const nextItems = buildCustomSwipeItems(configuredLeftSwipeIds);
-            const nextSignature = customSwipeItemsSignature(nextItems);
-            if (nextSignature === _customLeftItemsSignature)
-                return;
-
-            _customLeftItemsSignature = nextSignature;
-            customLeftItems = nextItems;
         }
 
         function normalizeRestingState(nextState) {
@@ -1365,7 +1287,7 @@ PanelWindow {
             command: [
                 "sh",
                 "-lc",
-                "exec cava -p /dev/stdin <<'EOF'\n[general]\nframerate = 30\nbars = 8\nautosens = 1\n[output]\nmethod = raw\nraw_target = /dev/stdout\ndata_format = ascii\nascii_max_range = 7\nchannels = mono\nEOF"
+                "exec cava -p /dev/stdin <<'EOF'\n[general]\nframerate = 60\nbars = 8\nautosens = 1\n[output]\nmethod = raw\nraw_target = /dev/stdout\ndata_format = ascii\nascii_max_range = 7\nchannels = mono\nEOF"
             ]
             stdout: SplitParser {
                 splitMarker: "\n"
@@ -1380,19 +1302,7 @@ PanelWindow {
             }
         }
 
-        Component.onCompleted: {
-            syncCustomLeftItems();
-            refreshMissingLeftSwipeValues();
-            updatePlainLyric();
-        }
-        Component.onDestruction: {
-            cavaRestartTimer.stop();
-
-            if (brightnessSnapshot.running) brightnessSnapshot.running = false;
-            if (volumeSnapshot.running) volumeSnapshot.running = false;
-            if (systemStatsSnapshot.running) systemStatsSnapshot.running = false;
-            if (cavaMonitor.running) cavaMonitor.running = false;
-        }
+        Component.onCompleted: refreshMissingLeftSwipeValues()
 
         Timer { id: btBlockVolTimer; interval: 2000; onTriggered: islandContainer.btJustConnected = false }
         Timer {
@@ -1428,19 +1338,9 @@ PanelWindow {
             target: SysBackend
 
             function onVolumeChanged(volPercentage, isMuted) {
-                const nextVolType = isMuted ? "MUTE" : "VOL";
-                const nextVolValue = islandContainer.clamp01(volPercentage / 100.0);
-                const unchanged = islandContainer.isMuted === isMuted
-                    && Math.abs(islandContainer.currentVolume - nextVolValue) <= 0.001
-                    && islandContainer._pendingVolType === nextVolType
-                    && Math.abs(islandContainer._pendingVolVal - nextVolValue) <= 0.001;
-
-                if (unchanged)
-                    return;
-
-                islandContainer._pendingVolType = nextVolType;
-                islandContainer._pendingVolVal = nextVolValue;
-                islandContainer.currentVolume = nextVolValue;
+                islandContainer._pendingVolType = isMuted ? "MUTE" : "VOL";
+                islandContainer._pendingVolVal = volPercentage / 100.0;
+                islandContainer.currentVolume = volPercentage / 100.0;
                 islandContainer.isMuted = isMuted;
                 volDebounce.restart();
             }
@@ -1515,36 +1415,20 @@ PanelWindow {
                 .trim();
         }
 
-        function extractFirstPlainLyric(rawLyrics) {
+        function parsePlainLyrics(rawLyrics) {
             const source = String(rawLyrics === undefined || rawLyrics === null ? "" : rawLyrics);
-            let lineStart = 0;
+            const rows = source.split(/\r?\n/);
+            const parsed = [];
 
-            for (let index = 0; index <= source.length; index++) {
-                if (index < source.length && source[index] !== "\n" && source[index] !== "\r")
-                    continue;
-
-                const row = source.slice(lineStart, index).trim();
-                if (row !== "" && !/^\[[a-zA-Z]+:.*\]$/.test(row)) {
-                    const lineText = cleanLyricLineText(row.replace(/\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]/g, ""));
-                    if (lineText !== "")
-                        return lineText;
-                }
-
-                if (source[index] === "\r" && source[index + 1] === "\n")
-                    index++;
-
-                lineStart = index + 1;
+            for (let i = 0; i < rows.length; i++) {
+                const row = rows[i].trim();
+                if (row === "") continue;
+                if (/^\[[a-zA-Z]+:.*\]$/.test(row)) continue;
+                const lineText = cleanLyricLineText(row.replace(/\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]/g, ""));
+                if (lineText !== "") parsed.push(lineText);
             }
 
-            return "";
-        }
-
-        function updatePlainLyric() {
-            if (inlineLyricsRaw === _lastParsedInlineLyricsRaw)
-                return;
-
-            _lastParsedInlineLyricsRaw = inlineLyricsRaw;
-            plainLyric = extractFirstPlainLyric(inlineLyricsRaw);
+            return parsed;
         }
 
         function cleanNotificationText(text) {
@@ -1604,13 +1488,8 @@ PanelWindow {
         property var activePlayer: resolveActivePlayer()
 
         onActivePlayerChanged: {
-            Qt.callLater(function() {
-                const nextDbusName = islandContainer.activePlayer && islandContainer.activePlayer.dbusName
-                    ? islandContainer.activePlayer.dbusName
-                    : "";
-                if (islandContainer.lastActivePlayerDbusName !== nextDbusName)
-                    islandContainer.lastActivePlayerDbusName = nextDbusName;
-            });
+            if (activePlayer && activePlayer.dbusName) lastActivePlayerDbusName = activePlayer.dbusName;
+            else if (!activePlayer) lastActivePlayerDbusName = "";
         }
 
         property string lyricsLookupTitle: activePlayer ? (activePlayer.trackTitle || activePlayer.title || "") : ""
@@ -1635,10 +1514,113 @@ PanelWindow {
             if (Array.isArray(inlineLyrics)) return inlineLyrics.join("\n");
             return inlineLyrics ? String(inlineLyrics) : "";
         }
-        property string plainLyric: ""
-        property string _lastParsedInlineLyricsRaw: ""
 
-        onInlineLyricsRawChanged: updatePlainLyric()
+        QtObject {
+            id: notificationBridge
+
+            property bool captureActive: false
+            property int captureStage: -1
+            property string pendingAppName: ""
+            property string pendingSummary: ""
+            property string pendingBody: ""
+
+            function resetCapture() {
+                captureActive = false;
+                captureStage = -1;
+                pendingAppName = "";
+                pendingSummary = "";
+                pendingBody = "";
+            }
+
+            function beginCapture() {
+                resetCapture();
+                captureActive = true;
+                captureStage = 0;
+            }
+
+            function decodeMonitorString(line) {
+                const match = line.match(/^\s*string "(.*)"\s*$/);
+                if (!match) return "";
+
+                try {
+                    return JSON.parse("\"" + match[1] + "\"");
+                } catch (error) {
+                    return match[1]
+                        .replace(/\\"/g, "\"")
+                        .replace(/\\\\/g, "\\");
+                }
+            }
+
+            function commitCapture() {
+                islandContainer.showNotificationCapsule(pendingAppName, pendingSummary, pendingBody);
+                resetCapture();
+            }
+
+            function handleLine(rawLine) {
+                const line = String(rawLine === undefined || rawLine === null ? "" : rawLine).trim();
+                if (line === "") return;
+
+                if (line.indexOf("member=Notify") !== -1) {
+                    beginCapture();
+                    return;
+                }
+
+                if (!captureActive) return;
+
+                switch (captureStage) {
+                case 0:
+                    if (!line.startsWith("string ")) return;
+                    pendingAppName = decodeMonitorString(line);
+                    captureStage = 1;
+                    return;
+                case 1:
+                    if (!line.startsWith("uint32 ")) return;
+                    captureStage = 2;
+                    return;
+                case 2:
+                    if (!line.startsWith("string ")) return;
+                    captureStage = 3;
+                    return;
+                case 3:
+                    if (!line.startsWith("string ")) return;
+                    pendingSummary = decodeMonitorString(line);
+                    captureStage = 4;
+                    return;
+                case 4:
+                    if (!line.startsWith("string ")) return;
+                    pendingBody = decodeMonitorString(line);
+                    commitCapture();
+                    return;
+                default:
+                    resetCapture();
+                }
+            }
+        }
+
+        Timer {
+            id: notificationMonitorRestartTimer
+            interval: 1200
+            repeat: false
+            onTriggered: notificationMonitor.running = true
+        }
+
+        Process {
+            id: notificationMonitor
+            running: true
+            command: [
+                "dbus-monitor",
+                "--session",
+                "type='method_call',interface='org.freedesktop.Notifications',member='Notify'"
+            ]
+            stdout: SplitParser {
+                splitMarker: "\n"
+
+                onRead: function(data) {
+                    notificationBridge.handleLine(data);
+                }
+            }
+            onExited: notificationMonitorRestartTimer.restart()
+        }
 
         QtObject {
             id: lyricsBridge
@@ -1654,7 +1636,8 @@ PanelWindow {
             readonly property string backendStatus: SysBackend && SysBackend.lyricsBackendStatus !== undefined
                 ? SysBackend.lyricsBackendStatus
                 : "idle"
-            readonly property string plainLyric: islandContainer.plainLyric
+            readonly property var plainLines: islandContainer.parsePlainLyrics(islandContainer.inlineLyricsRaw)
+            readonly property string plainLyric: plainLines.length > 0 ? plainLines[0] : ""
             readonly property string displayText: {
                 if (title === "") return "No music playing";
                 if (backendStatus === "missing" || backendStatus === "error") return "no lyrics";
@@ -1751,7 +1734,7 @@ PanelWindow {
 
                 switch (islandContainer.islandState) {
                 case "control_center":
-                    return 320 + (controlCenterLoader.item ? controlCenterLoader.item.controlCenterExtraHeight : 32);
+                    return 350;
                 case "expanded":
                     return 165;
                 case "notification":
@@ -1807,14 +1790,7 @@ PanelWindow {
                     easing.type: Easing.OutQuint
                 }
             }
-            Behavior on height {
-                enabled: !(controlCenterLoader.item && controlCenterLoader.item.batteryDrawerMoving)
-
-                NumberAnimation {
-                    duration: mainCapsule.morphDuration
-                    easing.type: Easing.OutQuint
-                }
-            }
+            Behavior on height { NumberAnimation { duration: mainCapsule.morphDuration; easing.type: Easing.OutQuint } }
             Behavior on radius { NumberAnimation { duration: mainCapsule.morphDuration; easing.type: Easing.OutQuint } }
             Behavior on color { ColorAnimation { duration: 280; easing.type: Easing.InOutQuad } }
             Behavior on outlineWidth { NumberAnimation { duration: 260; easing.type: Easing.InOutQuad } }
@@ -1838,7 +1814,6 @@ PanelWindow {
                     }
                 }
             }
-
 
             MouseArea {
                 id: capsuleMouseArea
@@ -1895,18 +1870,9 @@ PanelWindow {
                     if (!pressed || !swipeArmed || suppressNextClick || twoFingerTouchArea.touchPoints.length >= 2) return;
 
                     const mappedPoint = capsuleMouseArea.mapToItem(islandContainer, mouse.x, mouse.y);
-                    let deltaX = mappedPoint.x - swipeLastX;
-                    let deltaY = mappedPoint.y - swipeStartY;
-
-                    if (userConfig.dynamicIslandMouseRotation === 90) {
-                        const tmp = deltaX; deltaX = deltaY; deltaY = -tmp;
-                    } else if (userConfig.dynamicIslandMouseRotation === 180) {
-                        deltaX = -deltaX; deltaY = -deltaY;
-                    } else if (userConfig.dynamicIslandMouseRotation === 270) {
-                        const tmp = deltaX; deltaX = -deltaY; deltaY = tmp;
-                    }
-
-                    const adjustedDeltaX = Math.abs(deltaY) < sideSwipeVerticalTolerance ? deltaX : 0;
+                    const deltaX = mappedPoint.x - swipeLastX;
+                    const deltaY = Math.abs(mappedPoint.y - swipeStartY);
+                    const adjustedDeltaX = deltaY < sideSwipeVerticalTolerance ? deltaX : 0;
                     const nextProgress = islandContainer.advanceSideSwipeProgress(
                         islandContainer.swipeTransitionProgress,
                         adjustedDeltaX
@@ -2083,8 +2049,6 @@ PanelWindow {
                 }
             }
 
-
-
             Loader {
                 id: customSwipeLoader
                 anchors.fill: parent
@@ -2105,7 +2069,6 @@ PanelWindow {
                         minimumWidth: 220
                         maximumWidth: Math.max(220, root.width - 48)
                         transitionProgress: islandContainer.swipeTransitionProgress
-                        recordingActive: islandContainer.screenRecordingActive
                         showSecondaryText: islandContainer.workspaceOriginSide !== "left"
                             && islandContainer.splitOriginSide !== "left"
                         showCondition: true
@@ -2133,7 +2096,6 @@ PanelWindow {
                         minimumWidth: 220
                         maximumWidth: Math.max(220, root.width - 48)
                         transitionProgress: islandContainer.rightSwipeProgress
-                        recordingActive: islandContainer.screenRecordingActive
                         showSecondaryText: islandContainer.workspaceOriginSide !== "right"
                             && islandContainer.splitOriginSide !== "right"
                         showCondition: true
@@ -2315,7 +2277,6 @@ PanelWindow {
                             screen: root.screen
                             hyprlandData: hyprlandData
                             showCondition: root.overviewVisible
-                            previewsEnabled: root.overviewContentVisible
                             textFontFamily: root.textFontFamily
                             heroFontFamily: root.heroFontFamily
                             wallpaperPath: root.overviewWallpaperSource
